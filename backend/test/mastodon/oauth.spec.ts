@@ -5,6 +5,7 @@ import * as oauth_token from 'wildebeest/functions/oauth/token'
 import {
 	isUrlValid,
 	makeDB,
+	makeKVCache,
 	assertCORS,
 	assertJSON,
 	assertCache,
@@ -40,18 +41,20 @@ describe('Mastodon APIs', () => {
 
 		test('authorize missing params', async () => {
 			const db = await makeDB()
+			const cache = makeKVCache()
 
 			let req = new Request('https://example.com/oauth/authorize')
-			let res = await oauth_authorize.handleRequest(req, db, userKEK, accessDomain, accessAud)
+			let res = await oauth_authorize.handleRequest(cache, req, db, userKEK, accessDomain, accessAud)
 			assert.equal(res.status, 400)
 
 			req = new Request('https://example.com/oauth/authorize?scope=foobar')
-			res = await oauth_authorize.handleRequest(req, db, userKEK, accessDomain, accessAud)
+			res = await oauth_authorize.handleRequest(cache, req, db, userKEK, accessDomain, accessAud)
 			assert.equal(res.status, 400)
 		})
 
 		test('authorize unsupported response_type', async () => {
 			const db = await makeDB()
+			const cache = makeKVCache()
 
 			const params = new URLSearchParams({
 				redirect_uri: 'https://example.com',
@@ -60,13 +63,14 @@ describe('Mastodon APIs', () => {
 			})
 
 			const req = new Request('https://example.com/oauth/authorize?' + params)
-			const res = await oauth_authorize.handleRequest(req, db, userKEK, accessDomain, accessAud)
+			const res = await oauth_authorize.handleRequest(cache, req, db, userKEK, accessDomain, accessAud)
 			assert.equal(res.status, 400)
 		})
 
 		test("authorize redirect_uri doesn't match client redirect_uris", async () => {
 			const db = await makeDB()
 			const client = await createTestClient(db, 'https://redirect.com')
+			const cache = makeKVCache()
 
 			const params = new URLSearchParams({
 				redirect_uri: 'https://example.com/a',
@@ -79,13 +83,14 @@ describe('Mastodon APIs', () => {
 			const req = new Request('https://example.com/oauth/authorize?' + params, {
 				headers,
 			})
-			const res = await oauth_authorize.handleRequest(req, db, userKEK, accessDomain, accessAud)
+			const res = await oauth_authorize.handleRequest(cache, req, db, userKEK, accessDomain, accessAud)
 			assert.equal(res.status, 403)
 		})
 
 		test('authorize redirects with code on success and show first login', async () => {
 			const db = await makeDB()
 			const client = await createTestClient(db)
+			const cache = makeKVCache()
 
 			const params = new URLSearchParams({
 				redirect_uri: client.redirect_uris,
@@ -98,7 +103,7 @@ describe('Mastodon APIs', () => {
 			const req = new Request('https://example.com/oauth/authorize?' + params, {
 				headers,
 			})
-			const res = await oauth_authorize.handleRequest(req, db, userKEK, accessDomain, accessAud)
+			const res = await oauth_authorize.handleRequest(cache, req, db, userKEK, accessDomain, accessAud)
 			assert.equal(res.status, 302)
 
 			const location = new URL(res.headers.get('location') || '')
@@ -114,6 +119,7 @@ describe('Mastodon APIs', () => {
 
 		test('first login creates the user and redirects', async () => {
 			const db = await makeDB()
+			const cache = makeKVCache()
 
 			const params = new URLSearchParams({
 				redirect_uri: 'https://redirect.com/a',
@@ -128,7 +134,7 @@ describe('Mastodon APIs', () => {
 				method: 'POST',
 				body: formData,
 			})
-			const res = await first_login.handlePostRequest(req, db, userKEK)
+			const res = await first_login.handlePostRequest(cache, req, db, userKEK)
 			assert.equal(res.status, 302)
 
 			const location = res.headers.get('location')
@@ -143,6 +149,8 @@ describe('Mastodon APIs', () => {
 			assert(isUrlValid(actor.id))
 			// ensure that we generate a correct key pairs for the user
 			assert((await getSigningKey(userKEK, db, actor)) instanceof CryptoKey)
+
+			assert(cache.hasKey('sessions/a@cloudflare.com'))
 		})
 
 		test('token error on unknown client', async () => {
@@ -203,11 +211,12 @@ describe('Mastodon APIs', () => {
 		})
 
 		test('authorize returns CORS', async () => {
+			const cache = makeKVCache()
 			const db = await makeDB()
 			const req = new Request('https://example.com/oauth/authorize', {
 				method: 'OPTIONS',
 			})
-			const res = await oauth_authorize.handleRequest(req, db, userKEK, accessDomain, accessAud)
+			const res = await oauth_authorize.handleRequest(cache, req, db, userKEK, accessDomain, accessAud)
 			assert.equal(res.status, 200)
 			assertCORS(res)
 		})

@@ -1,34 +1,17 @@
 import * as access from 'wildebeest/backend/src/access'
+import * as session from 'wildebeest/backend/src/cache/session'
 import * as actors from 'wildebeest/backend/src/activitypub/actors'
 import type { Env } from 'wildebeest/backend/src/types/env'
 import type { Identity, ContextData } from 'wildebeest/backend/src/types/context'
 import * as errors from 'wildebeest/backend/src/errors'
 import { loadLocalMastodonAccount } from 'wildebeest/backend/src/mastodon/account'
 
-async function loadContextData(db: D1Database, clientId: string, email: string, ctx: any): Promise<boolean> {
-	const query = `
-        SELECT *
-        FROM actors
-        WHERE email=? AND type='Person'
-    `
-	const { results, success, error } = await db.prepare(query).bind(email).all()
-	if (!success) {
-		throw new Error('SQL error: ' + error)
-	}
-
-	if (!results || results.length === 0) {
-		console.warn('no results')
+async function loadContextData(cache: KVNamespace, clientId: string, email: string, ctx: any): Promise<boolean> {
+	const person = await session.getUserSession(cache, email)
+	if (!person) {
+		console.warn('no session found')
 		return false
 	}
-
-	const row: any = results[0]
-
-	if (!row.id) {
-		console.warn('person not found')
-		return false
-	}
-
-	const person = actors.personFromRow(row)
 
 	ctx.data.connectedActor = person
 	ctx.data.identity = { email }
@@ -82,11 +65,7 @@ export async function main(context: EventContext<Env, any, any>) {
 				return errors.notAuthorized('missing email')
 			}
 
-			// Load the user associated with the email in the payload *before*
-			// verifying the JWT validity.
-			// This is because loading the context will also load the access
-			// configuration, which are used to verify the JWT.
-			if (!(await loadContextData(context.env.DATABASE, clientId, payload.email, context))) {
+			if (!(await loadContextData(context.env.KV_CACHE, clientId, payload.email, context))) {
 				return errors.notAuthorized('failed to load context data')
 			}
 

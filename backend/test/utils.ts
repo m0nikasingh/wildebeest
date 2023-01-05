@@ -64,3 +64,33 @@ export async function createTestClient(
 ): Promise<Client> {
 	return createClient(db, 'test client', redirectUri, 'https://cloudflare.com', scopes)
 }
+
+export function makeKVCache(): KVNamespace & any {
+	const keys: any = {}
+
+	return {
+		hasKey(key: string): boolean {
+			return key in keys
+		},
+
+		getKey(key: string): string {
+			return keys[key]
+		},
+
+		async put(key: string, value: string) {
+			keys[key] = value
+		},
+
+		async get(key: string, opts: any): Promise<any> {
+			if (keys[key] === undefined) {
+				return null
+			}
+
+			if (opts.type === 'json') {
+				return JSON.parse(keys[key])
+			} else {
+				return keys[key]
+			}
+		},
+	} as any
+}

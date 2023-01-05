@@ -6,15 +6,17 @@ import * as errors from 'wildebeest/backend/src/errors'
 import { getClientById } from 'wildebeest/backend/src/mastodon/client'
 import * as access from 'wildebeest/backend/src/access'
 import { getPersonByEmail } from 'wildebeest/backend/src/activitypub/actors'
+import * as session from 'wildebeest/backend/src/cache/session'
 
 // Extract the JWT token sent by Access (running before us).
 const extractJWTFromRequest = (request: Request) => request.headers.get('Cf-Access-Jwt-Assertion') || ''
 
 export const onRequest: PagesFunction<Env, any, ContextData> = async ({ data, request, env }) => {
-	return handleRequest(request, env.DATABASE, env.userKEK, env.ACCESS_AUTH_DOMAIN, env.ACCESS_AUD)
+	return handleRequest(env.KV_CACHE, request, env.DATABASE, env.userKEK, env.ACCESS_AUTH_DOMAIN, env.ACCESS_AUD)
 }
 
 export async function handleRequest(
+	cache: KVNamespace,
 	request: Request,
 	db: D1Database,
 	userKEK: string,
@@ -74,10 +76,13 @@ export async function handleRequest(
 	const person = await getPersonByEmail(db, identity.email)
 	if (person === null) {
 		url.pathname = '/first-login'
+		// FIXME: remove once /first-login is behind Access
 		url.searchParams.set('email', identity.email)
 		url.searchParams.set('redirect_uri', encodeURIComponent(redirect_uri + '?code=' + code))
 		return Response.redirect(url.toString(), 302)
 	}
+
+	await session.storeUserSession(cache, identity.email, person)
 
 	return Response.redirect(redirect_uri + '?code=' + code, 302)
 }

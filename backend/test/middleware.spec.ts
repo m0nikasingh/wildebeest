@@ -1,4 +1,4 @@
-import { isUrlValid, makeDB, assertCORS } from './utils'
+import { isUrlValid, makeDB, assertCORS, makeKVCache } from './utils'
 import { createPerson } from 'wildebeest/backend/src/activitypub/actors'
 import { TEST_JWT, ACCESS_CERTS } from './test-data'
 import { strict as assert } from 'node:assert/strict'
@@ -34,12 +34,12 @@ describe('middleware', () => {
 			throw new Error('unexpected request to ' + input)
 		}
 
-		const db = await makeDB()
+		const cache = makeKVCache()
 
 		const headers = { authorization: 'Bearer APPID.' + TEST_JWT }
 		const request = new Request('https://example.com', { headers })
 		const ctx: any = {
-			env: { DATABASE: db },
+			env: { KV_CACHE: cache },
 			data: {},
 			request,
 		}
@@ -65,12 +65,12 @@ describe('middleware', () => {
 			throw new Error('unexpected request to ' + input)
 		}
 
-		const db = await makeDB()
+		const cache = makeKVCache()
 
 		const headers = { authorization: 'Bearer APPID.' + TEST_JWT }
 		const request = new Request('https://example.com', { headers })
 		const ctx: any = {
-			env: { DATABASE: db },
+			env: { KV_CACHE: cache },
 			data: {},
 			request,
 		}
@@ -96,22 +96,25 @@ describe('middleware', () => {
 			throw new Error('unexpected request to ' + input)
 		}
 
+		const cache = makeKVCache()
 		const db = await makeDB()
-		await createPerson(domain, db, userKEK, 'sven@cloudflare.com')
+		const person = await createPerson(domain, db, userKEK, 'a@cloudflare.com')
+
+		await cache.put('sessions/sven@cloudflare.com', JSON.stringify(person))
 
 		const headers = { authorization: 'Bearer APPID.' + TEST_JWT }
 		const request = new Request('https://example.com', { headers })
 		const ctx: any = {
 			next: () => new Response(),
 			data: {},
-			env: { DATABASE: db, ACCESS_AUD: accessAud, ACCESS_AUTH_DOMAIN: accessDomain },
+			env: { KV_CACHE: cache, ACCESS_AUD: accessAud, ACCESS_AUTH_DOMAIN: accessDomain },
 			request,
 		}
 
 		const res = await middleware_main.main(ctx)
 		assert.equal(res.status, 200)
-		assert(!ctx.data.connectedUser)
-		assert(isUrlValid(ctx.data.connectedActor.id))
+      console.log(ctx.data.connectedUser);
+		assert.equal(ctx.data.connectedUser.id.toString(), `https://${domain}/id`)
 		assert.equal(ctx.env.ACCESS_AUTH_DOMAIN, accessDomain)
 		assert.equal(ctx.env.ACCESS_AUD, accessAud)
 	})
