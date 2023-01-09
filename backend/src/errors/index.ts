@@ -9,10 +9,15 @@ const headers = {
 	'content-type': 'application/json',
 } as const
 
-function generateErrorResponse(error: string, status: number, errorDescription?: string): Response {
-	const res: ErrorResponse = {
-		error: `${error}. ` + 'If the problem persists please contact your instance administrator.',
-		...(errorDescription ? { error_description: errorDescription } : {}),
+function generateErrorResponse(error: string | Error, status: number, errorDescription?: string): Response {
+	let res: Error | ErrorResponse
+	if (error instanceof Error) {
+		res = error
+	} else {
+		res = {
+			error: `${error}. ` + 'If the problem persists please contact your instance administrator.',
+			...(errorDescription ? { error_description: errorDescription } : {}),
+		}
 	}
 	return new Response(JSON.stringify(res), { headers, status })
 }
@@ -35,4 +40,8 @@ export function timelineMissing(): Response {
 
 export function clientUnknown(): Response {
 	return generateErrorResponse(`The client is unknown or invalid`, 403)
+}
+
+export function internalServerError(error: Error): Response {
+	return generateErrorResponse(error, 500)
 }
